@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+      }
+      #status {
+        margin-top: 10px;
+        font-weight: bold;
+        color: green;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    </style>
+    <script>
+      function toggleAll(source) {
+        const checkboxes = document.getElementsByName('vehicle');
+        for (let cb of checkboxes) cb.checked = source.checked;
+      }
+
+      function submitSelection() {
+        const selected = Array.from(document.querySelectorAll('input[name="vehicle"]:checked')).map(cb => cb.value);
+        const button = document.getElementById("exportButton");
+        const status = document.getElementById("status");
+
+        if (selected.length === 0) {
+          alert("Please select at least one vehicle.");
+          return;
+        }
+
+        button.disabled = true;
+        status.textContent = "Exporting... Please wait.";
+
+        google.script.run
+          .withSuccessHandler(() => {
+            status.textContent = "Export complete.";
+            google.script.host.close();
+          })
+          .withFailureHandler(error => {
+            alert("Error: " + error.message);
+          })
+          .saveExportRouteForVehicles(selected);
+      }
+    </script>
+  </head>
+  <body>
+    <label><input type="checkbox" onchange="toggleAll(this)"> Select All</label>
+    <br><br>
+    <div>
+      <? for (var i = 0; i < vehicleList.length; i++) { ?>
+        <label>
+          <input type="checkbox" name="vehicle" value="<?= vehicleList[i] ?>">
+          <?= vehicleList[i] ?>
+        </label><br>
+      <? } ?>
+    </div>
+    <br>
+    <button id="exportButton" onclick="submitSelection()">✅ Export Selected</button>
+    <div id="status"></div>
+  </body>
+</html>

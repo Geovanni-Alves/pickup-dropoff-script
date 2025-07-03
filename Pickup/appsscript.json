@@ -1,0 +1,7 @@
+{
+  "timeZone": "America/Vancouver",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "dependencies": {},
+  "sheets": {}
+}
