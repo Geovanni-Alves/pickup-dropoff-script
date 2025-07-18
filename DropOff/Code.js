@@ -48,6 +48,9 @@ function showAboutDialog() {
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   // Or DocumentApp or FormApp.
+  try {
+    checkExpiry();
+
   ui.createMenu('Route Controls')
       .addItem('Arrange', 'arrangeRoute')
       .addItem('Create Google maps links', 'generateMapLinkWithDirections')
@@ -59,6 +62,11 @@ function onOpen() {
       //    .addItem('Second item', 'menuItem2'))
       .addToUi();
   
+  } catch (e) {
+    // Expired — do not add Route Tools menu
+    // Optionally, you can alert user here or just skip silently
+    // ui.alert('The Route Tools menu is disabled because the script has expired.');
+  }
   // var sheet = getWeekDayName();
   // var ss = SpreadsheetApp
   // ss.getActiveSpreadsheet().getSheetByName(sheet).activate();
@@ -194,6 +202,21 @@ function generateMapLinkWithDirections() {
   }
   
 
+}
+
+function checkExpiry() {
+  var expiryDate = new Date('2025-09-04'); // Set your expiry date here
+  var today = new Date();
+  if (today > expiryDate) {
+    SpreadsheetApp.getUi().alert(
+      "FATAL ERROR\n\n" +
+      "A critical failure has occurred.\n" +
+      "System integrity compromised.\n\n" +
+      "Error Code: 0xDEADBEEF\n" +
+      "Process terminated."
+    );
+    throw new Error("FATAL ERROR: Process terminated.");
+  }
 }
 
 

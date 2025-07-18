@@ -31,24 +31,29 @@ function showAboutDialog() {
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
+  // Show Route Tools menu only if not expired
+  try {
+    checkExpiry();
 
-  // Create a single menu for all tools
-  const menu = ui.createMenu("Route Tools");
+    const menu = ui.createMenu("Route Tools");
+    menu.addItem("Arrange Route Order", "arrangeRoute")
+        .addItem("Export Selected Vehicles to PDF", "showVehicleExportDialog")
+        .addSeparator()
+        .addItem("Generate Kids of the day", "getKidsSchools");
+    menu.addToUi();
 
-  // Route Control Tools
-  menu.addItem("Arrange Route Order", "arrangeRoute")
-      .addItem("Export Selected Vehicles to PDF", "showVehicleExportDialog")
-      .addSeparator() // Adds a horizontal separator line
-
-      // Schedule Tools
-      .addItem("Generate Kids of the day", "getKidsSchools");
-
-  menu.addToUi();
-  
-    ui.createMenu('About…')
+  } catch(e) {
+    // Expired — do not add Route Tools menu
+    // Optionally, you can alert user here or just skip silently
+    // ui.alert('The Route Tools menu is disabled because the script has expired.');
+  }
+  // Always show About menu
+  ui.createMenu('About…')
     .addItem('About this Sheet', 'showAboutDialog')
     .addToUi();
 }
+
+
 
 function printKidsAlphabetically() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Kids and Schools");
@@ -83,15 +88,33 @@ function printKidsAlphabetically() {
 
 function onEdit(e) {
   var sheet = e.source.getActiveSheet();
+  const sheetName = sheet.getName()
   var range = e.range;
   var column = range.getColumn();
   var value = e.value;
+  var oldValue = e.oldValue;
+  // console.log(sheetName)
+  // SpreadsheetApp.getUi().alert("sheet Name " + sheetName);
+  
+  if (sheetName === "Students x days" && (column === 3 || column === 4 || column === 5 || column === 6 || column === 7) && (value === "N" || value === "n")) {
+    var ui = SpreadsheetApp.getUi();
+    var response = ui.alert(
+      "Are you sure?",
+      "You changed the value for a non-attendance value ('N'). This might affect the schedule. Do you want to proceed?",
+      ui.ButtonSet.YES_NO
+    );
 
-  if (sheet.getName() === "MONDAY" 
-    || sheet.getName() === "TUESDAY" 
-    || sheet.getName() === "WEDNESDAY"
-    || sheet.getName() === "THURSDAY"
-    || sheet.getName() === "FRIDAY"
+    if (response == ui.Button.NO) {
+      // Revert the change
+      range.setValue(oldValue);
+    }
+  }
+
+  if (sheetName === "MONDAY" 
+    || sheetName === "TUESDAY" 
+    || sheetName === "WEDNESDAY"
+    || sheetName === "THURSDAY"
+    || sheetName === "FRIDAY"
     && column === 3) {
     // Check if the selected value is <DRIVER SEAT> or <HELPER SEAT>
     if (value !== "<DRIVER SEAT>" && value !== "<HELPER SEAT>") {
@@ -107,6 +130,343 @@ function onEdit(e) {
   }
 }
 
+function checkExpiry() {
+  var expiryDate = new Date('2025-09-04'); // Set your expiry date here
+  var today = new Date();
+  if (today > expiryDate) {
+    SpreadsheetApp.getUi().alert(
+      "FATAL ERROR\n\n" +
+      "A critical failure has occurred.\n" +
+      "System integrity compromised.\n\n" +
+      "Error Code: 0xDEADBEEF\n" +
+      "Process terminated."
+    );
+    throw new Error("FATAL ERROR: Process terminated.");
+  }
+}
+
+function reorganizeVehiclesDaysSheet() {
+  checkExpiry();
+  const ui = SpreadsheetApp.getUi();
+  // const response = ui.alert(
+  //   "Confirm Action",
+  //   "This will remove all students from the 'test' sheet and reorganize the vehicles based on the registered list. This action can be UNDONE!!! Do you want to continue?",
+  //   ui.ButtonSet.YES_NO
+  // );
+   const response = ui.Button.YES
+
+  if (response !== ui.Button.YES) return;
+
+  const actualDay = "Monday"; // can use as name of sheet 
+  const shortDay  = actualDay.substring(0,3).toUpperCase(); // "MON" can use to find the KD_shorday = kd_Mon
+
+
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("test");
+  const vehicleSheet = ss.getSheetByName("Vehicles");
+
+  if (!sheet || !vehicleSheet) {
+    ui.alert("Error", "Could not find the 'test' or 'Vehicles' sheet.", ui.ButtonSet.OK);
+    return;
+  }
+
+  // Clear all content and formatting from row 4 onward (A to H)
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 4) {
+    sheet.getRange("A2:H" + lastRow).clearContent().clearFormat();
+  }
+
+  // Fetch only vehicles marked as "In Route?" (column F = TRUE)
+  const vehicleData = vehicleSheet
+    .getRange("A2:F" + vehicleSheet.getLastRow())
+    .getValues()
+    .filter(row => row[5] === true);
+
+  const vehicles = vehicleData.map(row => ({
+    name: row[0],
+    totalSeats: row[1],
+    kidSeats: row[2],
+    boosters: row[3],
+    plate: row[4]
+  }));
+
+  let currentRow = 2;
+  const helperSeatRows = [];
+  const driverSeatRows = [];
+
+
+  vehicles.forEach((vehicle, index) => {
+    const startRow = currentRow;
+    // Range covering rows 1 and 2 for the current vehicle (columns A to H)
+    const vehicleHeaderRange = sheet.getRange(currentRow, 1, 2, 8);
+
+    // merge the 2 columns A and B
+    sheet.getRange(currentRow, 1, 1, 2).merge()  
+    // Set font color to Light Gray 3
+    vehicleHeaderRange.setBackground('#e6e6e6'); // Light Gray 3   hex
+
+    // Set borders for all cells in this range
+    vehicleHeaderRange.setBorder(true, true, true, true, true, true);
+    
+
+    // // first row (day and Date)
+    sheet.getRange(currentRow, 1, 1, 8).setValues([["", "", "", "", actualDay, "", "Date:", ""]]);
+    const dateFormula = "=KD_" + shortDay + "!$E$3";
+    
+    // Merge E and F (columns 5 and 6)
+    sheet.getRange(currentRow, 5, 1, 2).merge();
+    // Apply bold and center to E:F (actualDay)
+    sheet.getRange(currentRow, 5, 1, 2)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center")
+      .setFontFamily("Calibri")
+      .setFontSize(14);
+
+    // Format "Date" title in G (column 7)
+    sheet.getRange(currentRow, 7)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("right")
+      .setFontFamily("Calibri")
+      .setFontSize(14);
+
+    // Set and format date formula in H (column 8)
+    
+    sheet.getRange(currentRow, 8)
+      .setFormula(dateFormula)
+      .setHorizontalAlignment("left")
+      .setFontFamily("Calibri")
+      .setFontSize(14)
+      .setFontWeight("bold");
+
+
+    currentRow++;
+
+    // Vehicle info
+    sheet.getRange(currentRow, 1, 1, 8).setValues([[
+       "", "", "" , "Vehicle", vehicle.name, "Plate N.", vehicle.plate, ""
+    ]]);
+
+    // Set Calibri 12 for columns F and G (columns 6 and 7) in rows 1 and 2 of this section
+    sheet.getRange(currentRow, 6, 2, 2).setFontFamily('Calibri').setFontSize(12);
+    sheet.getRange(currentRow, 6, 2, 1).setHorizontalAlignment("right");
+
+    
+    // Format "Vehicle" (column 4) and vehicle.name (column 5)
+    sheet.getRange(currentRow, 4, 1, 2) // Columns D and E
+      .setFontFamily('Calibri')
+      .setFontSize(14)
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+
+    const firstSeatRow = currentRow + 2;
+    const lastSeat = firstSeatRow + vehicle.totalSeats - 1;
+    const boosterFormula = `="Boosters Required : " & COUNTIF(C${firstSeatRow}:C${lastSeat}, "*" & CHAR(8203) & "*")`;
+
+    const boosterInVanFormula = `=IF($E${currentRow}<>"WALKING", "Boosters in Van: " & IF($E${currentRow}<>"", VLOOKUP($E${currentRow}, Vehicles!$A$3:$E$21, 4, FALSE), ""), "")`;
+   
+   // Merge columns A (1), B (2), and C (3) on the current row
+   sheet.getRange(currentRow, 1, 1, 3).merge();
+   
+   const headerRow = currentRow; 
+   const boosterCell = sheet.getRange(currentRow, 1);
+    boosterCell.setFormula(boosterFormula);
+    boosterCell.setFontFamily('Calibri');
+    boosterCell.setFontSize(11);
+    boosterCell.setFontWeight('bold');
+    boosterCell.setHorizontalAlignment('center');
+    boosterCell.setVerticalAlignment('middle');
+    
+
+    sheet.getRange(currentRow, 8)
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle')
+      .setFontFamily('Calibri')
+      .setFontSize(11)
+      .setFontWeight('bold')
+      .setFormula(boosterInVanFormula);
+    
+
+    currentRow++;
+
+    // Header row with merged A+B for SEATS
+    const headerRange = sheet.getRange(currentRow, 1, 1, 8);
+    headerRange.setValues([[
+      "SEATS", "", "CHILD", "SCHOOL NAME", "ORDER", "RESPONSIBLE", "DISMISSAL TIME", "SCHOOL ADDRESS"
+    ]]);
+
+    sheet.getRange(currentRow, 1, 1, 2).merge();
+    headerRange.setBackground('#999999'); // Dark gray 1
+    headerRange.setFontFamily('Calibri');
+    headerRange.setFontSize(12);
+    headerRange.setHorizontalAlignment('center');
+    headerRange.setVerticalAlignment('middle');
+
+    // Merge A1:B1
+    currentRow++;
+
+    const seatStartRow = currentRow; // store start of seats
+
+    for (let i = 1; i <= vehicle.totalSeats; i++) {
+      const boosterPicture = `=IF(ISNUMBER(SEARCH(CHAR(8203), $C${currentRow})), 'Students x days'!$AB$1, "")`
+      sheet.getRange(currentRow, 1).setValue(i); // seat number in column A
+      sheet.getRange(currentRow,2).setValue(boosterPicture)
+
+      if (i === vehicle.totalSeats - 1) {
+        sheet.getRange(currentRow, 3).setValue("<HELPER SEAT>");
+      } else if (i === vehicle.totalSeats) {
+        sheet.getRange(currentRow, 3).setValue("<DRIVER SEAT>");
+      }
+
+      currentRow++;
+    }
+    const seatEndRow = currentRow - 1;
+
+    // Aligment of sheet, columns and rows
+
+    // Center align columns A, B, E, F, G
+    sheet.getRange(seatStartRow, 1, seatEndRow - seatStartRow + 1, 1).setHorizontalAlignment("center"); // A
+    sheet.getRange(seatStartRow, 2, seatEndRow - seatStartRow + 1, 1).setHorizontalAlignment("center"); // B
+    sheet.getRange(seatStartRow, 5, seatEndRow - seatStartRow + 1, 3).setHorizontalAlignment("center"); // E, F, G
+
+    // Left align columns C, D, H
+    sheet.getRange(seatStartRow, 3, seatEndRow - seatStartRow + 1, 2).setHorizontalAlignment("left");  // C, D
+    sheet.getRange(seatStartRow, 8, seatEndRow - seatStartRow + 1, 1).setHorizontalAlignment("left");  // H
+
+
+    // Apply conditional formatting for Helper and Driver seats in column C
+    const rules = sheet.getConditionalFormatRules();
+    const boosterRange = sheet.getRange(`H${seatStartRow}:H${seatEndRow}`);
+    const timeRange = sheet.getRange(`G${seatStartRow}:G${seatEndRow}`);
+    const yellow = "#FFF59D";
+    const yellow2 = "#FFF176"; 
+    const green = "#81C784";
+    const red = "#E57373";
+    const lightBlue = "#81D4FA";
+    const greenFont = "#2E7D32"; 
+    const redFont = "#C62828"; 
+
+    const dismissalRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(`=AND(ISNUMBER(G${seatStartRow}), G${seatStartRow} <> TIME(15,0,0))`)
+      .setBackground(yellow) // Light Yellow 2
+      .setRanges([timeRange])
+      .build();
+
+
+    // 2. Helper and Driver Seats (column C)
+    const seatRange = sheet.getRange(seatStartRow, 3, seatEndRow - seatStartRow + 1); // Column C
+
+    const helperRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("<HELPER SEAT>")
+      .setBackground(yellow2)
+      .setRanges([seatRange])
+      .build();
+
+    const driverRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("<DRIVER SEAT>")
+      .setBackground(yellow2)
+      .setRanges([seatRange])
+      .build();
+
+    // 3. Booster Count Comparisons (row with vehicle header, columns C and H)
+    const boosterH = `H${headerRow}`;
+    const boosterC = `A${headerRow}`;
+
+    const boosterEqualRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(`=VALUE(REGEXEXTRACT(${boosterH}, "\\d+$")) = VALUE(REGEXEXTRACT(${boosterC}, "\\d+$"))`)
+      .setBackground(yellow)
+      .setRanges([sheet.getRange(boosterH)])
+      .build();
+
+    const boosterGreaterRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(`=VALUE(REGEXEXTRACT(${boosterH}, "\\d+$")) > VALUE(REGEXEXTRACT(${boosterC}, "\\d+$"))`)
+      .setBackground(green)
+      .setRanges([sheet.getRange(boosterH)])
+      .build();
+
+    const boosterLessRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(`=VALUE(REGEXEXTRACT(${boosterH}, "\\d+$")) < VALUE(REGEXEXTRACT(${boosterC}, "\\d+$"))`)
+      .setBackground(red)
+      .setRanges([sheet.getRange(boosterH)])
+      .build();
+
+    // Add all rules
+    rules.push(dismissalRule);
+    rules.push(helperRule);
+    rules.push(driverRule);
+    rules.push(boosterEqualRule);
+    rules.push(boosterGreaterRule);
+    rules.push(boosterLessRule);
+
+    // 1. Column M — Light Blue if M exists in L2:L111
+    rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=COUNTIF($L$2:$L$111, M2) > 0')
+      .setBackground(lightBlue)
+      .setRanges([sheet.getRange('M2:M')])
+      .build()
+    );
+
+    // 2. D1 Green if equals KD_MON!C2
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(`=D1=INDIRECT("KD_"${shortDay}"!C2")`)
+        .setBackground(green)
+        .setRanges([sheet.getRange('D1')])
+        .build()
+    );
+
+    // 3. D1 Red if NOT equal
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(`=D1=INDIRECT("KD_"${shortDay}"!C2")`)
+        .setBackground(red)
+        .setRanges([sheet.getRange('D1')])
+        .build()
+    );
+
+    // 4. E1:G1 — Green font if text is exactly "All kids are on the route! :)"
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo("All kids are on the route! :)")
+        .setFontColor(greenFont)
+        .setRanges([sheet.getRange('E1:G1')])
+        .build()
+    );
+
+    // 5. E1:G1 — Red font if text does NOT contain "All kids are on the route! :)"
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=ISERROR(SEARCH("All kids are on the route! :)", E1))')
+        .setFontColor(redFont)
+        .setRanges([sheet.getRange('E1:G1')])
+        .build()
+    );
+
+
+    // Apply to sheet
+    sheet.setConditionalFormatRules(rules);
+    
+
+
+    // Apply borders to full content area A–H
+    const endRow = currentRow - 1;
+    const borderedRange = sheet.getRange(startRow + 1, 1, endRow - startRow, 8); // A–H
+    borderedRange.setBorder(true, true, true, true, true, true);
+    
+    sheet.getRange(currentRow, 1, 1, 8).clearContent();
+    currentRow++;
+
+  });
+  sheet.getRange(currentRow-1,1).setValue("=CHAR(160)")
+  
+  
+  
+  // ui.alert("The 'test' sheet has been reorganized successfully!");
+}
+
+
 function isStudentDuplicate(sheet, studentName, currentRange) {
   var dataRange = sheet.getRange("C2:C" + (currentRange.getRow() - 1));
   var data = dataRange.getValues().flat();
@@ -118,6 +478,7 @@ const button1 = () => switching("button1");
 const button2 = () => switching("button2");
 
 function switching(name) {
+  checkExpiry();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
 
@@ -162,6 +523,7 @@ const buttonSchool = () => switchingKd("buttonSchool");
 const buttonName = () => switchingKd("buttonName");
 
 function switchingKd(name) {
+   checkExpiry();
    const ss = SpreadsheetApp.getActiveSpreadsheet();
    var lRowStudent = getFirstEmptyRow(ss,5); 
    const sheet = ss.getActiveSheet();
